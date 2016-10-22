@@ -19,7 +19,7 @@ router.post('/auth/login', function (req, res, next) {
     db.findUser(req.body.email)
         .then(user => {
             if (user && user.password === req.body.password) {
-                createJWT(user).then(token => res.json({username: user.nickname, token}));
+                createJWT(user).then(token => res.json({username: user.nickname, token, userId: user.id}));
             } else {
                 res.status(401).end();
             }
