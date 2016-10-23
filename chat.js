@@ -17,24 +17,32 @@ module.exports = function (app) {
         socket.on('send-message', (message) => {
             console.log(`new message from ${user.username}:`, message);
             const messageToSend =Object.assign(message, {author: user.username});
-            if (message.partnerId) {
-                const eventType = `receive-private-message-${Number(user.userId) + Number(messageToSend.partnerId)}`;
-                console.log(`send private message from ${user.username}:${user.userId} to user with id ${messageToSend.partnerId}`);
-                getConnectionByUserId(message.partnerId).emit(eventType, messageToSend);
-                socket.emit(eventType, messageToSend)
+            if (message.roomId) {
+                console.log(`sent private message from ${user.username}:${user.userId} to room ${message.roomId}`);
+                io.to(message.roomId).emit(`receive-private-message-${message.roomId}`, messageToSend);
             } else {
                 io.emit(`receive-message`, messageToSend);
             }
         });
-        socket.on('accepted-invitation', (partner) => {
-            getConnectionByUserId(partner.userId).emit('accepted-invitation', user);
+        socket.on('accepted-invitation', ({partner, roomId}) => {
+            const partnerSocket = getConnectionByUserId(partner.userId);
+            partnerSocket.emit('accepted-invitation', {partner: user, roomId});
+            socket.join(roomId);
+            partnerSocket.join(roomId);
+            console.log(`a new chat is set up for ${user.username}:${user.userId} and ${partner.username}:${partner.userId}`);
         });
         socket.on('set-up-room', (userIdTo) => {
-            const
-                partnerSocket = getConnectionByUserId(userIdTo),
-                partner = partnerSocket.handshake.query;
-            console.log(`a new chat is set up for ${user.username}:${user.userId} and ${partner.username}:${partner.userId}`);
-            partnerSocket.emit('invitation-to-private', user);
+            const roomId = generateRoomId(userIdTo, user.userId);
+            getConnectionByUserId(userIdTo).emit('invitation-to-private', {partner: user, roomId});
+        });
+        socket.on('leave-room', ({roomId, partnerId}) => {
+            socket.leave(roomId);
+            io.to(roomId).emit('partner-closed-room', user.username);
+            getConnectionByUserId(partnerId).leave(roomId);
+            console.log(`${user.username}:${user.userId} left the room ${roomId}`)
+        });
+        socket.on('get-partner', (userId) => {
+            socket.emit('retrieve-partner', getConnectionByUserId(userId).handshake.query.username);
         });
     });
     http.listen('5000');
@@ -71,5 +79,10 @@ module.exports = function (app) {
         });
 
         return socketToFind;
+    }
+
+    function generateRoomId(...userIds) {
+
+        return `room-${userIds.sort().join('-')}`;
     }
 };
